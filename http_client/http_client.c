@@ -22,7 +22,7 @@ int get_status(int sockfd){
     char * next_buff = buf + 1;
     int bytes;
     int status;
-    printf("Begin Response ..\n");
+    //printf("Begin Response ..\n");
     while(bytes = recv(sockfd, next_buff, 1, 0)){
         if(bytes < 0){
             perror("get_status");
@@ -90,7 +90,7 @@ int get_total_bytes(int sock){
         }
 
 
-       printf("Content-Length: %d\n", total_bytes);
+       //printf("Content-Length: %d\n", total_bytes);
     }
     // printf("End HEADER ..\n");
     return total_bytes ;
@@ -184,6 +184,6 @@ int main(int argc, char *argv[])
     else
 
     close(sockfd);
-    printf("\n\nDone.\n\n");
+    //printf("\n\nDone.\n\n");
     return 0;
 }
