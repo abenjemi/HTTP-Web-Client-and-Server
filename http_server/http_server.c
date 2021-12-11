@@ -71,7 +71,7 @@ int main()
 
 
     while(1) {
-        printf("\n+++++++ Waiting for new connection ++++++++\n\n");
+        // printf("\n+++++++ Waiting for new connection ++++++++\n\n");
 		sin_size = sizeof(my_addr);
 
         if ((new_fd = accept(sockfd, (struct sockaddr *)&my_addr, (socklen_t*)&sin_size))<0)
@@ -82,7 +82,7 @@ int main()
 
         // printf("\nIM HERE\n");
 
-        char data_read[1000];
+        char response[1000];
         char buf[30000] = {'\0'};
         bytes_read = read(new_fd , buf, 30000);
         if (buf[0] != '\0')
@@ -91,14 +91,52 @@ int main()
             char * method = strtok(buf, " ");
             char * resource = strtok(NULL, " ");
             char * protocol = strtok(NULL, "\r\n");
-            fprintf(stdout, "\"%s %s %s\"", method, resource, protocol);
+            fprintf(stdout, "\"%s %s %s\" ", method, resource, protocol);
 
             char rootdir[1024] = {0};
             strcpy(rootdir, "Webpage");
             strcat(rootdir, resource);
 
-            if (resource[strlen(resource) - 1] == '/')
+            if (strstr(method, "GET") == NULL) // if method used is not GET return 501
             {
+                printf("501 Not Implemented\n");
+                strcpy(response, "HTTP/1.0 501 Not Implemented\r\n\r\n<html><body><h1>501 Not Implemented</h1></body></html>");
+                if(send(new_fd, response, 1000, 0) < 0) 
+                {
+                    perror("send");
+                }
+            }
+            else if (resource[0] != '/') // if resource does not start with '/' return 400
+            {
+                printf("400 Bad Request - resource does not start with '/'\n");
+                strcpy(response, "HTTP/1.0 400 Bad Request\r\n\r\n<html><body><h1>400 Bad Request</h1></body></html>");
+                if(send(new_fd, response, 1000, 0) == -1) {
+                    perror("send");
+                }
+            }
+            else if(strstr(resource, "/../") != NULL) // if resource contains "/../" return 400
+            {
+                printf("400 Bad Request - resource contains /../\n");
+                strcpy(response, "HTTP/1.0 400 Bad Request\r\n\r\n<html><body><h1>400 Bad Request</h1></body></html>");
+                if(send(new_fd, response, 1000, 0) == -1) {
+                    perror("send");
+                }
+            }
+            else if (strlen(resource) >= 3)
+            {
+                char bad_string[4] = "/..";
+                if (strcmp(&resource[strlen(resource) - 3], bad_string) == 0) // if resource ends with "/.." return 400
+                {
+                    printf("400 Bad Request - resource ends with /..\n");
+                    strcpy(response, "HTTP/1.0 400 Bad Request\r\n\r\n<html><body><h1>400 Bad Request</h1></body></html>");
+                    if(send(new_fd, response, 1000, 0) == -1) {
+                        perror("send");
+                    }
+                }
+            }
+            else if (resource[strlen(resource) - 1] == '/')
+            {
+                // printf("\n\n FIRST CHARACTER OF PATH IS    %c\n\n", resource[0]);
                 strcat(rootdir, "index.html");
 
                 FILE * fptr = fopen(rootdir, "r");
@@ -110,30 +148,30 @@ int main()
 
                     fseek(fptr, 0, SEEK_SET);
 
-                    fprintf(stdout, " 200 OK\n");
+                    printf("200 OK\n");
                     char header[1000];
                     memset(header, '\0', 1000);
                     sprintf(header, "HTTP/1.0 200 OK\r\nContent-Length: %d\r\n\r\n", size);
                     char tmp[1000];
                     memset(tmp, '\0', 1000);
                     int lenread = fread(tmp, 1, 1000 - strlen(header), fptr);
-                    strcpy(data_read, header);
+                    strcpy(response, header);
                     for(int i = 0; i < lenread; i++){
-                        data_read[i + strlen(header)] = tmp[i];
+                        response[i + strlen(header)] = tmp[i];
                     }
 
-                    if(send(new_fd, data_read, 1000, 0) < 0) {
+                    if(send(new_fd, response, 1000, 0) < 0) {
                         perror("send");
                     }
-                    memset(data_read, '\0', 1000);
+                    memset(response, '\0', 1000);
                     size -= lenread;
                     
                     while (size > 0){
-                        size -= fread(data_read, 1, 1000, fptr);
-                        if(send(new_fd, data_read, 1000, 0) == -1) {
+                        size -= fread(response, 1, 1000, fptr);
+                        if(send(new_fd, response, 1000, 0) == -1) {
                             perror("send");
                         }
-                        memset(data_read, '\0', 100);
+                        memset(response, '\0', 100);
                         usleep(1000);
                     }
                     
@@ -142,19 +180,19 @@ int main()
                 else
                 {
                     fprintf(stdout, " 404 Not Found\n");
-                    strcpy(str, "HTTP/1.0 404 Not Found\r\n\r\n<html><body><h1>404 Not Found</h1></body></html>");
-                    if(send(new_fd, str, 1000, 0) == -1) {
+                    strcpy(response, "HTTP/1.0 404 Not Found\r\n\r\n<html><body><h1>404 Not Found</h1></body></html>");
+                    if(send(new_fd, response, 1000, 0) == -1) {
                         perror("send");
                     }
-                    memset(str, '\0', 1000);
+                    memset(response, '\0', 1000);
                 }
 
             }
-            else if ()
+            // else if ()
 
             // printf("%s\n",buf);
             // ssize_t bytes = write(new_fd , hello , strlen(hello));
-            printf("------------------Hello message sent-------------------");
+            // printf("------------------Hello message sent-------------------");
 
         }
         
