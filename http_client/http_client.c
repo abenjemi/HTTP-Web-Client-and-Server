@@ -17,67 +17,83 @@
 #include <sys/stat.h>
 
 
-int ReadHttpStatus(int sockfd){
-    char c;
-    char buff[1024]="",*ptr=buff+1;
-    int bytes_received, status;
+int get_status(int sockfd){
+    char buf[1024] = "";
+    char * next_buff = buf + 1;
+    int bytes;
+    int status;
     printf("Begin Response ..\n");
-    while(bytes_received = recv(sockfd, ptr, 1, 0)){
-        if(bytes_received==-1){
-            perror("ReadHttpStatus");
+    while(bytes = recv(sockfd, next_buff, 1, 0)){
+        if(bytes < 0){
+            perror("get_status");
             exit(1);
         }
 
-        if((ptr[-1]=='\r')  && (*ptr=='\n' )) break;
-        ptr++;
+        // printf("\nnext_buff[-1] = %c \n *next_buff = %c\n", next_buff[-1], *next_buff);
+
+        if((next_buff[-1] == '\r')  && (*next_buff == '\n' )) break;
+        next_buff += 1;
     }
-    *ptr=0;
-    ptr=buff+1;
+    *next_buff = 0;
+    next_buff = buf + 1;
 
-    sscanf(ptr,"%*s %d ", &status);
+    sscanf(next_buff, "%*s %d ", &status);
 
-    printf("%s\n",ptr);
-    printf("status=%d\n",status);
-    printf("End Response ..\n");
-    return (bytes_received>0)?status:0;
+    // If it’s not ”200”, the program should print the first line of the response to the terminal (stdout) and exit.
+    if (status != 200)
+    {
+        printf("%s\n",next_buff);
+    }
 
+    // printf("%s\n",next_buff);
+    // printf("status=%d\n",status);
+    // printf("End Response ..\n");
+    if (bytes > 0) return status;
+    return 0;
 }
 
 //the only filed that it parsed is 'Content-Length' 
-int ParseHeader(int sock){
-    char c;
-    char buff[1024]="",*ptr=buff+4;
-    int bytes_received, status;
-    printf("Begin HEADER ..\n");
-    while(bytes_received = recv(sock, ptr, 1, 0)){
-        if(bytes_received==-1){
+int get_total_bytes(int sock){
+    char buf[1024] = ""; 
+    char * next_buff = buf + 4;
+    int total_bytes;
+    int status;
+    // printf("Begin HEADER ..\n");
+    while(total_bytes = recv(sock, next_buff, 1, 0)){
+        if(total_bytes < 0){
             perror("Parse Header");
             exit(1);
         }
 
         if(
-            (ptr[-3]=='\r')  && (ptr[-2]=='\n' ) &&
-            (ptr[-1]=='\r')  && (*ptr=='\n' )
+            (next_buff[-3] == '\r')  && (next_buff[-2] == '\n' ) &&
+            (next_buff[-1] == '\r')  && (*next_buff == '\n' )
         ) break;
-        ptr++;
+        next_buff++;
     }
 
-    *ptr=0;
-    ptr=buff+4;
-    //printf("%s",ptr);
+    *next_buff = 0;
+    next_buff = buf + 4;
+    //printf("%s",ptr); not me
 
-    if(bytes_received){
-        ptr=strstr(ptr,"Content-Length:");
-        if(ptr){
-            sscanf(ptr,"%*s %d",&bytes_received);
+    if(total_bytes){
+        next_buff = strstr(next_buff, "Content-Length:");
+        if(next_buff)
+        {
+            sscanf(next_buff, "%*s %d", &total_bytes);
 
-        }else
-            bytes_received=-1; //unknown size
+        }
+        else
+        {
+            total_bytes = -1; //unknown size
+            printf("Error: could not download the requested file (file length unknown)");
+        }
 
-       printf("Content-Length: %d\n",bytes_received);
+
+       printf("Content-Length: %d\n", total_bytes);
     }
-    printf("End HEADER ..\n");
-    return  bytes_received ;
+    // printf("End HEADER ..\n");
+    return total_bytes ;
 
 }
 
@@ -93,7 +109,7 @@ int main(int argc, char *argv[])
     // create client socket
     int sockfd, numbytes;
     if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-		printf("socket");
+		perror("socket");
 		exit(1);
 	}
     
@@ -107,7 +123,7 @@ int main(int argc, char *argv[])
     
     /* get server's IP by invoking the DNS */
 	if ((he = gethostbyname(argv[1])) == NULL) {
-		printf("gethostbyname");
+		perror("gethostbyname");
 		exit(1);
 	}
     server_addr.sin_addr = *((struct in_addr *)he->h_addr_list[0]);
@@ -121,9 +137,9 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-    printf("I got here\n");
+    // printf("I got here\n");
 
-    printf("Sending data ...\n");
+    // printf("Sending data ...\n");
     char request[1024];
 
     snprintf(request, sizeof(request), "GET /%s HTTP/1.1\r\nHost: %s:%s\r\n\r\n", argv[3], argv[1], argv[2]);
@@ -132,36 +148,41 @@ int main(int argc, char *argv[])
         perror("send");
         exit(1); 
     }
-    printf("Data sent.\n");  
+    // printf("Data sent.\n");  
 
     //fp=fopen("received_file","wb");
-    printf("Recieving data...\n\n");
+    // printf("Recieving data...\n\n");
 
     int contentlengh;
     int bytes_received;
     char recv_data[1024];
 
-    if(ReadHttpStatus(sockfd) && (contentlengh=ParseHeader(sockfd))){
+    if(get_status(sockfd) && (contentlengh = get_total_bytes(sockfd))){
 
         int bytes=0;
-        FILE* fptr = fopen("make.html","wb");
-        printf("Saving data...\n\n");
+        char * filename = strrchr(argv[3], '/');
+        filename += 1;
+        // printf("\n filename is %s \n", filename);
+        FILE* fptr = fopen(filename,"wb");
+        // printf("Saving data...\n\n");
 
         while(bytes_received = recv(sockfd, recv_data, 1024, 0)){
-            if(bytes_received==-1){
-                perror("recieve");
-                exit(3);
+            if(bytes_received < 0){
+                perror("recv");
+                exit(1);
             }
 
 
-            fwrite(recv_data,1,bytes_received,fptr);
-            bytes+=bytes_received;
-            printf("Bytes recieved: %d from %d\n",bytes,contentlengh);
-            if(bytes==contentlengh)
+            fwrite(recv_data, 1, bytes_received, fptr);
+            bytes += bytes_received;
+            // printf("Bytes recieved: %d from %d\n",bytes,contentlengh);
+            if(bytes == contentlengh)
             break;
         }
         fclose(fptr);
     }
+    else
+
     close(sockfd);
     printf("\n\nDone.\n\n");
     return 0;
