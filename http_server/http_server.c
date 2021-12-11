@@ -28,6 +28,14 @@
 #define DBPORT 53004
 
 
+int isDirectory(const char *path) {
+   struct stat statbuf;
+   if (stat(path, &statbuf) != 0)
+       return 0;
+   return S_ISDIR(statbuf.st_mode);
+}
+
+
 int main()
 {
     int sockfd, new_fd;
@@ -72,13 +80,84 @@ int main()
             exit(1);
         }
 
-        printf("\nIM HERE\n");
+        // printf("\nIM HERE\n");
 
-        char buf[30000] = {0};
+        char data_read[1000];
+        char buf[30000] = {'\0'};
         bytes_read = read(new_fd , buf, 30000);
-        printf("%s\n",buf);
-        ssize_t bytes = write(new_fd , hello , strlen(hello));
-        printf("------------------Hello message sent-------------------");
+        if (buf[0] != '\0')
+        {
+            // char * method, resource, protocol;
+            char * method = strtok(buf, " ");
+            char * resource = strtok(NULL, " ");
+            char * protocol = strtok(NULL, "\r\n");
+            fprintf(stdout, "\"%s %s %s\"", method, resource, protocol);
+
+            char rootdir[1024] = {0};
+            strcpy(rootdir, "Webpage");
+            strcat(rootdir, resource);
+
+            if (resource[strlen(resource) - 1] == '/')
+            {
+                strcat(rootdir, "index.html");
+
+                FILE * fptr = fopen(rootdir, "r");
+
+                if (fptr != NULL)
+                {
+                    fseek(fptr, 0, SEEK_END);
+                    int size = ftell(fptr);
+
+                    fseek(fptr, 0, SEEK_SET);
+
+                    fprintf(stdout, " 200 OK\n");
+                    char header[1000];
+                    memset(header, '\0', 1000);
+                    sprintf(header, "HTTP/1.0 200 OK\r\nContent-Length: %d\r\n\r\n", size);
+                    char tmp[1000];
+                    memset(tmp, '\0', 1000);
+                    int lenread = fread(tmp, 1, 1000 - strlen(header), fptr);
+                    strcpy(data_read, header);
+                    for(int i = 0; i < lenread; i++){
+                        data_read[i + strlen(header)] = tmp[i];
+                    }
+
+                    if(send(new_fd, data_read, 1000, 0) < 0) {
+                        perror("send");
+                    }
+                    memset(data_read, '\0', 1000);
+                    size -= lenread;
+                    
+                    while (size > 0){
+                        size -= fread(data_read, 1, 1000, fptr);
+                        if(send(new_fd, data_read, 1000, 0) == -1) {
+                            perror("send");
+                        }
+                        memset(data_read, '\0', 100);
+                        usleep(1000);
+                    }
+                    
+                    fclose(fptr);
+                }
+                else
+                {
+                    fprintf(stdout, " 404 Not Found\n");
+                    strcpy(str, "HTTP/1.0 404 Not Found\r\n\r\n<html><body><h1>404 Not Found</h1></body></html>");
+                    if(send(new_fd, str, 1000, 0) == -1) {
+                        perror("send");
+                    }
+                    memset(str, '\0', 1000);
+                }
+
+            }
+            else if ()
+
+            // printf("%s\n",buf);
+            // ssize_t bytes = write(new_fd , hello , strlen(hello));
+            printf("------------------Hello message sent-------------------");
+
+        }
+        
         close(new_fd);
     }
     return 0;
