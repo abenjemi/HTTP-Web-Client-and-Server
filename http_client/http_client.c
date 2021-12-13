@@ -43,6 +43,7 @@ int get_status(int sockfd){
     if (status != 200)
     {
         printf("%s\n",next_buff);
+        return 0;
     }
 
     // printf("%s\n",next_buff);
@@ -65,16 +66,15 @@ int get_total_bytes(int sock){
             exit(1);
         }
 
-        if(
-            (next_buff[-3] == '\r')  && (next_buff[-2] == '\n' ) &&
-            (next_buff[-1] == '\r')  && (*next_buff == '\n' )
-        ) break;
+        if((next_buff[-3] == '\r')  && (next_buff[-2] == '\n') && (next_buff[-1] == '\r')  && (*next_buff == '\n'))
+        {
+            break;
+        }
         next_buff++;
     }
 
     *next_buff = 0;
     next_buff = buf + 4;
-    //printf("%s",ptr); not me
 
     if(total_bytes){
         next_buff = strstr(next_buff, "Content-Length:");
@@ -86,11 +86,11 @@ int get_total_bytes(int sock){
         else
         {
             total_bytes = -1; //unknown size
-            printf("Error: could not download the requested file (file length unknown)");
+            printf("Error: could not download the requested file (file length unknown)\n");
         }
 
 
-       //printf("Content-Length: %d\n", total_bytes);
+    //    printf("Content-Length: %d\n", total_bytes);
     }
     // printf("End HEADER ..\n");
     return total_bytes ;
