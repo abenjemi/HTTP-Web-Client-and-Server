@@ -27,6 +27,8 @@
 #define DBADDR "127.0.0.1"
 #define DBPORT 53004
 
+#define SENDBUFSIZE 4096
+
 
 int isDir(const char * resource) {
    struct stat buff;
@@ -53,7 +55,7 @@ void send_response(char * rootdir, char * response, int sockfd, int new_fd, FILE
     strcat(response, initial_bytes);
 
     if(send(new_fd, response, 1024, MSG_NOSIGNAL) < 0) {
-        // perror("send");
+        perror("send");
     }
     memset(response, '\0', 1024);
     size -= inbytes_read;
@@ -61,12 +63,126 @@ void send_response(char * rootdir, char * response, int sockfd, int new_fd, FILE
     while (size > 0){
         size -= fread(response, 1, 1024, fptr);
         if(send(new_fd, response, 1024, MSG_NOSIGNAL) < 0) {
-            // perror("send");
+            perror("send");
         }
         memset(response, '\0', 1024);
         usleep(1000);
     }  
     
+}
+
+void send_400(char * response, int new_fd)
+{
+    printf("400 Bad Request\n");
+    strcpy(response, "HTTP/1.0 400 Bad Request\r\n\r\n<html><body><h1>400 Bad Request</h1></body></html>");
+    if(send(new_fd, response, 1024, 0) < 0) {
+        perror("send");
+    }
+}
+
+void send_404(char * response, int new_fd)
+{
+    printf("404 Not Found\n");
+    strcpy(response, "HTTP/1.0 404 Not Found\r\n\r\n<html><body><h1>404 Not Found</h1></body></html>");
+    if(send(new_fd, response, 1024, 0) < 0) 
+    {
+        perror("send");
+    }                
+}
+
+void send_501(char * response, int new_fd)
+{
+    printf("501 Not Implemented\n");
+    strcpy(response, "HTTP/1.0 501 Not Implemented\r\n\r\n<html><body><h1>501 Not Implemented</h1></body></html>");
+    if(send(new_fd, response, 1024, 0) < 0) 
+    {
+        perror("send");
+    }               
+}
+
+char* sendfrom_db(int new_fd, char* rootdir){
+    int sockfd;
+	struct sockaddr_in their_addr; /* client's address information */
+	struct hostent *he;
+    char response[SENDBUFSIZE] = {'\0'};
+    char header[1000] = {'\0'};
+    char send_buf[1000] = {'\0'};
+    int bytes_received;
+    int send_header = 1;
+
+    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+		perror("socket");
+		exit(1);
+	}
+
+    their_addr.sin_family = AF_INET;
+	their_addr.sin_port = htons(DBPORT);
+    their_addr.sin_addr.s_addr = inet_addr(DBADDR);
+	bzero(&(their_addr.sin_zero), 8);
+
+    if (connect(sockfd,(struct sockaddr *)&their_addr, sizeof(struct sockaddr)) < 0) 
+    {
+		perror("connect");
+		exit(1);
+	}
+
+    if (send(sockfd, rootdir, strlen(rootdir), 0) < 0)
+    {
+        perror("connect");
+    }
+
+    int size = 2 * 1024 * 1024;
+    setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &size, (socklen_t)sizeof(int));
+    while (1) 
+    {
+        if ((bytes_received = recv(sockfd, response, SENDBUFSIZE, 0)) < 0) 
+        {
+            perror("recv");
+            exit(1);
+        }
+        
+        if (strstr(response, "File Not Found") != NULL)
+        { 
+            send_404(header, new_fd);
+            memset(header, '\0', 1000);
+            break;
+        }
+        if (strstr(response, "DONE")!=NULL)
+        {
+            break;
+        }
+
+        if(send_header == 1)
+        {
+            char first_line[] = "HTTP/1.0 200 OK\r\n\r\n";
+            fprintf(stdout, "200 OK\n");
+            if(send(new_fd, first_line, strlen(first_line), 0) < 0) 
+            {
+                perror("send");
+            }
+            send_header = 0;
+        }
+
+        int cnt = 0;
+        for (int itr = 0; itr < bytes_received; itr++, cnt++)
+        {
+            if(cnt > 1023){
+                if(send(new_fd, send_buf, 1024, 0) < 0) 
+                {
+                    perror("send");
+                }
+                cnt -= 1024;
+            }
+            send_buf[cnt] = response[itr];
+        }
+        if(send(new_fd, send_buf, 1024, 0) < 0) 
+        {
+            perror("send");
+        }
+        memset(response, '\0', SENDBUFSIZE);
+    }
+	close(sockfd);
+	return 0;
 }
 
 
@@ -134,47 +250,30 @@ int main()
 
             if ((strstr(protocol, "HTTP/1.1") == NULL) && (strstr(protocol, "HTTP/1.0") == NULL)) // protocol is not HTTP/1.1 or HTTP/1.0
             {
-                printf("501 Not Implemented - protocol\n");
-                strcpy(response, "HTTP/1.0 501 Not Implemented\r\n\r\n<html><body><h1>501 Not Implemented</h1></body></html>");
-                if(send(new_fd, response, 1024, 0) < 0) 
-                {
-                    perror("send");
-                }
+                // printf("first 501\n");
+                send_501(response, new_fd);
+                memset(response, '\0', 1024);
             }
             else if (strstr(method, "GET") == NULL) // if method used is not GET return 501
             {
-                printf("501 Not Implemented\n");
-                strcpy(response, "HTTP/1.0 501 Not Implemented\r\n\r\n<html><body><h1>501 Not Implemented</h1></body></html>");
-                if(send(new_fd, response, 1024, 0) < 0) 
-                {
-                    perror("send");
-                }
+                // printf("second 501\n");
+                send_501(response, new_fd);
+                memset(response, '\0', 1024);
             }
             else if (resource[0] != '/') // if resource does not start with '/' return 400
             {
-                printf("400 Bad Request - resource does not start with '/'\n");
-                strcpy(response, "HTTP/1.0 400 Bad Request\r\n\r\n<html><body><h1>400 Bad Request</h1></body></html>");
-                if(send(new_fd, response, 1024, 0) < 0) {
-                    perror("send");
-                }
+                send_400(response, new_fd);
+                memset(response, '\0', 1024);
             }
             else if(strstr(resource, "/../") != NULL) // if resource contains "/../" return 400
             {
-                printf("400 Bad Request - resource contains /../\n");
-                strcpy(response, "HTTP/1.0 400 Bad Request\r\n\r\n<html><body><h1>400 Bad Request</h1></body></html>");
-                if(send(new_fd, response, 1024, 0) < 0) {
-                    perror("send");
-                }
+                send_400(response, new_fd);
+                memset(response, '\0', 1024);
             }
             else if ((strlen(resource) >= 3) && (strcmp(&resource[strlen(resource) - 3], "/..") == 0))
             {
-                // char bad_string[4] = "/..";
-                
-                printf("400 Bad Request - resource ends with /..\n");
-                strcpy(response, "HTTP/1.0 400 Bad Request\r\n\r\n<html><body><h1>400 Bad Request</h1></body></html>");
-                if(send(new_fd, response, 1024, 0) < 0) {
-                    perror("send");
-                }
+                send_400(response, new_fd);
+                memset(response, '\0', 1024);
                 
             }
             else if (resource[strlen(resource) - 1] == '/') // if resource ends with / append index.html to it and return this file
@@ -190,11 +289,8 @@ int main()
                 }
                 else
                 {
-                    printf("404 Not Found\n");
-                    strcpy(response, "HTTP/1.0 404 Not Found\r\n\r\n<html><body><h1>404 Not Found</h1></body></html>");
-                    if(send(new_fd, response, 1024, 0) < 0) {
-                        perror("send");
-                    }
+                    send_404(response, new_fd);
+                    memset(response, '\0', 1024);
                 }
             }
             else if (isDir(rootdir))
@@ -213,11 +309,8 @@ int main()
                 }
                 else
                 {
-                    printf("404 Not Found, no index\n");
-                    strcpy(response, "HTTP/1.0 404 Not Found\r\n\r\n<html><body><h1>404 Not Found</h1></body></html>");
-                    if(send(new_fd, response, 1024, 0) < 0) {
-                        perror("send");
-                    }
+                    send_404(response, new_fd);
+                    memset(response, '\0', 1024);
                 }
             }
             else
@@ -229,12 +322,26 @@ int main()
                     send_response(rootdir, response, sockfd, new_fd, fptr);
                     fclose(fptr);
                 }
-                else
+                else // if no such path in server
                 {
-                    printf("404 Not Found\n");
-                    strcpy(response, "HTTP/1.0 404 Not Found\r\n\r\n<html><body><h1>404 Not Found</h1></body></html>");
-                    if(send(new_fd, response, 1024, 0) < 0) {
-                        perror("send");
+                    if(strstr(resource, "?key=") != NULL) // ask database for file
+                    {
+                        memset(rootdir, '\0', 1000);
+                        char * cat_search = strtok(resource, "=");
+                        cat_search = strtok(NULL, "+");
+                        strcpy(rootdir, cat_search);
+                        while((cat_search = strtok(NULL, "+")) != NULL) // get all words in search field
+                        {
+                            strcat(rootdir, " ");
+                            strcat(rootdir, cat_search);
+                        }
+                        sendfrom_db(new_fd, rootdir);
+                    }
+                    else // different kind of request
+                    {
+                        // printf("third 501");
+                        send_501(response, new_fd);
+                        memset(response, '\0', 1024);
                     }
                 }
             }
